@@ -1,203 +1,200 @@
 import 'package:flutter/material.dart';
 import 'package:flip_card/flip_card.dart';
 import 'package:flutter_swiper/flutter_swiper.dart';
+import 'package:auto_size_text/auto_size_text.dart';
+import 'package:state_persistence/state_persistence.dart';
 
 void main() => runApp(App());
 
+_appBar(text, call) {
+  return AppBar(
+    title: Text("$text"),
+    elevation: 0.0,
+    actions: [IconButton(icon: Icon(Icons.add), onPressed: call)],
+  );
+}
+
 class App extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      theme: ThemeData(primarySwatch: Colors.deepPurple),
-      home: Home(),
+  build(_) {
+    return PersistedAppState(
+      storage: JsonFileStorage(),
+      child: MaterialApp(
+        theme: ThemeData(
+          primarySwatch: Colors.teal,
+          scaffoldBackgroundColor: Colors.teal,
+        ),
+        home: Home(),
+      ),
     );
   }
 }
 
-class Home extends StatelessWidget {
-  _newDeck(context) {
-    showDialog(
+class Home extends StatefulWidget {
+  createState() => HomeS();
+}
+
+class HomeS extends State<Home> {
+  _newDeck() async {
+    var result = await showDialog(
       context: context,
-      builder: (context) {
-        return NewAlert([
-          TextField(
-            autofocus: true,
-            decoration: InputDecoration(labelText: "Deck Name"),
-          ),
-        ]);
+      builder: (_) => NewAlert("Deck Title", "Deck Description"),
+    );
+    var store = PersistedAppState.of(context);
+    if (store["decks"] == null) store["decks"] = [];
+    store["decks"].add({"name": result[0], "desc": result[1], "cards": []});
+    setState(() => store.persist());
+  }
+
+  _openDeck(i) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => Review(i)),
+    );
+  }
+
+  _buildBody(ctx) {
+    return PersistedStateBuilder(
+      builder: (ctx, snap) {
+        if (!snap.hasData) return Container();
+        if (snap.data["decks"] == null)
+          snap.data["decks"] = [
+            {"name": "Example Deck", "desc": "Empty Starter Deck", "cards": []}
+          ];
+        var decks = snap.data["decks"];
+        return ListView.builder(
+          itemCount: decks?.length ?? 0,
+          padding: EdgeInsets.all(4.0),
+          itemBuilder: (c, i) {
+            return Hero(
+              tag: "$i",
+              child: Card(
+                child: ListTile(
+                  title: Text(decks[i]["name"]),
+                  subtitle: Text(decks[i]["desc"]),
+                  onTap: () => _openDeck(i),
+                ),
+              ),
+            );
+          },
+        );
       },
     );
   }
 
-  _openDeck(context, i) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => Review("$i")),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  build(ctx) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text("Flashcards"),
-        elevation: 0.0,
-        actions: <Widget>[
-          IconButton(
-            icon: Icon(Icons.add),
-            onPressed: () => _newDeck(context),
-          )
-        ],
-      ),
-      backgroundColor: Theme.of(context).accentColor,
-      body: ListView.builder(
-        padding: EdgeInsets.all(4.0),
-        itemBuilder: (c, i) {
-          return Hero(
-            tag: "$i",
-            child: Card(
-              child: ListTile(
-                title: Text("Japanese"),
-                subtitle: Text("Deck for RTK"),
-                onTap: () => _openDeck(context, i),
-              ),
-            ),
-          );
-        },
-      ),
+      appBar: _appBar("Decks", () => _newDeck()),
+      body: _buildBody(ctx),
     );
   }
 }
 
-class DeckCard extends StatelessWidget {
-  final String tag;
-  DeckCard(this.tag);
-
-  @override
-  Widget build(BuildContext context) {
-    return Hero(
-      tag: tag,
-      child: FlipCard(
-        direction: FlipDirection.HORIZONTAL,
-        front: Card(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: <Widget>[
-              ListTile(
-                title: Text("Japanese"),
-                subtitle: Text("Deck for RTK"),
-              ),
-              Text("Example Prompt"),
-              Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text("Tap card to flip"),
-              )
-            ],
-          ),
-        ),
-        back: Card(
-          child: Center(
-            child: Text(
-              "漢字",
-              style: TextStyle(fontSize: 100),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class Review extends StatefulWidget {
-  final tag;
+class Review extends StatelessWidget {
+  var swipe = SwiperController();
+  var tag;
   Review(this.tag);
 
-  @override
-  ReviewState createState() => ReviewState();
-}
+  _newCard(ctx, i) async {
+    var result = await showDialog(
+      context: ctx,
+      builder: (_) => NewAlert("Card Front", "Card Back"),
+    );
+    var store = PersistedAppState.of(ctx);
+    store["decks"][i]["cards"].add({"front": result[0], "back": result[1]});
+    store.persist();
+  }
 
-class ReviewState extends State<Review> {
-  var _swipe = SwiperController();
-  var count = 1;
+  _buildContent(ctx, text) {
+    var store = PersistedAppState.of(ctx);
+    return Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      ListTile(
+        title: Text("${store["decks"][tag]["name"]}"),
+        subtitle: Text("${store["decks"][tag]["desc"]}"),
+      ),
+      Padding(
+        padding: EdgeInsets.all(64.0),
+        child: AutoSizeText(
+          "$text",
+          style: TextStyle(fontSize: 50.0),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+        ),
+      ),
+      Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Text("Tap to flip card"),
+      )
+    ]);
+  }
 
-  _newCard() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return NewAlert([
-          TextField(
-            autofocus: true,
-            decoration: InputDecoration(labelText: "Card Description"),
-          ),
-          TextField(
-            decoration: InputDecoration(labelText: "Card Answer"),
-          ),
-        ]);
-      },
+  _buildCard(ctx, front, back, tag) {
+    return Padding(
+      padding: EdgeInsets.all(48.0),
+      child: Hero(
+        tag: "$tag",
+        child: FlipCard(
+          direction: FlipDirection.HORIZONTAL,
+          front: Card(child: _buildContent(ctx, "$front")),
+          back: Card(child: _buildContent(ctx, "$back")),
+        ),
+      ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).accentColor,
-      appBar: AppBar(
-        title: Text("Review"),
-        backgroundColor: Colors.transparent,
-        elevation: 0.0,
-        actions: <Widget>[
-          IconButton(
-            icon: Icon(Icons.add),
-            onPressed: () => _newCard(),
-          )
-        ],
-      ),
-      body: Swiper(
-        itemCount: 50,
-        loop: false,
-        controller: _swipe,
-        onIndexChanged: (i) => setState(() => count = i + 1),
-        itemBuilder: (c, i) => DeckCard(widget.tag),
-      ),
-      bottomNavigationBar: BottomAppBar(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: <Widget>[
-            IconButton(
-              icon: Icon(Icons.arrow_back_ios),
-              onPressed: () => _swipe.previous(),
-            ),
-            Text("$count/50"),
-            IconButton(
-              icon: Icon(Icons.arrow_forward_ios),
-              onPressed: () => _swipe.next(),
-            )
-          ],
-        ),
-      ),
+  build(ctx) {
+    return PersistedStateBuilder(
+      builder: (ctx, snap) {
+        var cards = snap.data["decks"][tag]["cards"];
+        return Scaffold(
+          appBar: _appBar("Cards", () => _newCard(ctx, tag)),
+          body: Swiper(
+            itemCount: cards.length,
+            loop: false,
+            control: SwiperControl(color: Colors.white),
+            controller: swipe,
+            itemBuilder: (c, i) {
+              return _buildCard(ctx, cards[i]["front"], cards[i]["back"], tag);
+            },
+          ),
+        );
+      },
     );
   }
 }
 
 class NewAlert extends StatelessWidget {
-  final List<Widget> inputs;
-  NewAlert(this.inputs);
+  var one;
+  var two;
+  NewAlert(this.one, this.two);
 
-  @override
-  Widget build(BuildContext context) {
+  var _one = TextEditingController();
+  var _two = TextEditingController();
+  _buildInput(text, controller) {
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(labelText: "$text"),
+    );
+  }
+
+  build(ctx) {
     return AlertDialog(
       content: Column(
         mainAxisSize: MainAxisSize.min,
-        children: inputs,
+        children: [
+          _buildInput(one, _one),
+          _buildInput(two, _two),
+        ],
       ),
-      actions: <Widget>[
+      actions: [
         FlatButton(
           child: Text("CANCEL"),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(ctx).pop(),
         ),
         FlatButton(
           child: Text("CREATE"),
-          onPressed: () {},
-        )
+          onPressed: () {
+            Navigator.of(ctx).pop([_one.value.text, _two.value.text]);
+          },
+        ),
       ],
     );
   }
